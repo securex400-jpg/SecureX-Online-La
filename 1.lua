@@ -9339,106 +9339,60 @@ _G.FpsButton = {
 
 function _G.FpsButton.TouchPos(pc)
     local F = _G.FpsButton
-    -- PERF: the working input API is probed once and then cached, so steady
-    -- state polling costs exactly ONE native call instead of up to six.
-    local api = F.touchApi
-    if api == 1 then
-        local x, y, pr
-        pcall(function() x, y, pr = pc:GetInputTouchState(0, 0, 0, false) end)
-        if type(x) == "number" and type(y) == "number" and x > -1.0e6 and y > -1.0e6 then
-            if pr == 1 then pr = true elseif pr == 0 then pr = false end
-            return x, y, pr
-        end
-        F.touchApi = nil
-    elseif api == 2 then
-        local x, y, pr
-        pcall(function() x, y, pr = pc:GetInputTouchState(0, 0, 0) end)
-        if type(x) == "number" and type(y) == "number" and x > -1.0e6 and y > -1.0e6 then
-            if pr == 1 then pr = true elseif pr == 0 then pr = false end
-            return x, y, pr
-        end
-        F.touchApi = nil
-    elseif api == 3 then
-        local x, y, pr
+    if not pc or not Valid(pc) then
         pcall(function()
-            local a, b, c = pc:GetInputTouchState(0)
-            if type(a) == "number" and type(b) == "number" then x, y = a, b end
-            if type(c) == "boolean" then pr = c elseif c == 1 then pr = true elseif c == 0 then pr = false end
+            local GD = package.loaded["GameLua.GameCore.Data.GameplayData"] or require("GameLua.GameCore.Data.GameplayData")
+            pc = GD.GetPlayerController()
         end)
-        if type(x) == "number" and type(y) == "number" then return x, y, pr end
-        F.touchApi = nil
-    elseif api == 4 then
-        local x, y, pr
-        pcall(function() x, y = pc:GetMousePosition() end)
-        if type(x) == "number" and type(y) == "number" then return x, y, pr end
-        F.touchApi = nil
-    elseif api == 5 then
-        local x, y, pr
-        pcall(function()
-            local WLL = WidgetLayoutLibrary
-            if WLL and type(WLL.GetMousePositionOnViewport) == "function" then
-                local v = WLL.GetMousePositionOnViewport(pc)
-                if v and type(v.X) == "number" and type(v.Y) == "number" then x, y = v.X, v.Y end
-            end
-        end)
-        if type(x) == "number" and type(y) == "number" then return x, y, pr end
-        F.touchApi = nil
-    elseif api == 6 then
-        local x, y, pr
-        pcall(function()
-            local WLL = WidgetLayoutLibrary
-            if WLL and type(WLL.GetMousePositionOnPlatform) == "function" then
-                local v = WLL.GetMousePositionOnPlatform()
-                if v and type(v.X) == "number" and type(v.Y) == "number" then x, y = v.X, v.Y end
-            end
-        end)
-        return x, y, pr
+        if not pc or not Valid(pc) then return nil, nil, false end
     end
 
-    -- cold probe: find the first API that answers, then remember it
-    local x, y, pressed
-    pcall(function() x, y, pressed = pc:GetInputTouchState(0, 0, 0, false) end)
-    if type(x) == "number" and type(y) == "number" and x > -1.0e6 and y > -1.0e6 then
-        if pressed == 1 then pressed = true elseif pressed == 0 then pressed = false end
-        F.touchApi = 1
-        return x, y, pressed
-    end
-    x, y, pressed = nil, nil, nil
-    pcall(function() x, y, pressed = pc:GetInputTouchState(0, 0, 0) end)
-    if type(x) == "number" and type(y) == "number" and x > -1.0e6 and y > -1.0e6 then
-        if pressed == 1 then pressed = true elseif pressed == 0 then pressed = false end
-        F.touchApi = 2
-        return x, y, pressed
-    end
-    x, y, pressed = nil, nil, nil
+    local x, y, pr = nil, nil, false
+    -- 1. Official Slua GetInputTouchState: (fingerIndex, nil, nil, nil)
     pcall(function()
-        local a, b, c = pc:GetInputTouchState(0)
-        if type(a) == "number" and type(b) == "number" then x, y = a, b end
-        if type(c) == "boolean" then pressed = c elseif c == 1 then pressed = true elseif c == 0 then pressed = false end
-    end)
-    if type(x) == "number" and type(y) == "number" then F.touchApi = 3 return x, y, pressed end
-    x, y = nil, nil
-    pcall(function() x, y = pc:GetMousePosition() end)
-    if type(x) == "number" and type(y) == "number" then F.touchApi = 4 return x, y, pressed end
-    x, y = nil, nil
-    pcall(function()
-        local WLL = WidgetLayoutLibrary
-        if WLL and type(WLL.GetMousePositionOnViewport) == "function" then
-            local v = WLL.GetMousePositionOnViewport(pc)
-            if v and type(v.X) == "number" and type(v.Y) == "number" then x, y = v.X, v.Y end
+        local tx, ty, tp = pc:GetInputTouchState(0, nil, nil, nil)
+        if tp == true or tp == 1 then
+            x, y, pr = tx, ty, true
+        elseif type(tx) == "number" and type(ty) == "number" and tp ~= nil and tp ~= false and tp ~= 0 then
+            x, y, pr = tx, ty, true
         end
     end)
-    if type(x) == "number" and type(y) == "number" then F.touchApi = 5 return x, y, pressed end
-    x, y = nil, nil
-    pcall(function()
-        local WLL = WidgetLayoutLibrary
-        if WLL and type(WLL.GetMousePositionOnPlatform) == "function" then
-            local v = WLL.GetMousePositionOnPlatform()
-            if v and type(v.X) == "number" and type(v.Y) == "number" then x, y = v.X, v.Y end
-        end
-    end)
-    if type(x) == "number" and type(y) == "number" then F.touchApi = 6 end
-    return x, y, pressed
+
+    -- Finger 1 check
+    if not pr then
+        pcall(function()
+            local tx1, ty1, tp1 = pc:GetInputTouchState(1, nil, nil, nil)
+            if tp1 == true or tp1 == 1 then
+                x, y, pr = tx1, ty1, true
+            end
+        end)
+    end
+
+    -- 2. Fallback variants
+    if not pr then
+        pcall(function()
+            local tx, ty, tp = pc:GetInputTouchState(0)
+            if tp == true or tp == 1 then
+                x, y, pr = tx, ty, true
+            end
+        end)
+    end
+
+    -- 3. Mouse / Emulator pointer fallback
+    if not pr then
+        pcall(function()
+            local E = import("EKeys")
+            local kLeft = E and E.LeftMouseButton or "LeftMouseButton"
+            if pc:IsInputKeyDown(kLeft) then
+                local mx, my = pc:GetMousePosition()
+                if type(mx) == "number" and type(my) == "number" then
+                    x, y, pr = mx, my, true
+                end
+            end
+        end)
+    end
+
+    return x, y, (pr == true)
 end
 -- Screen pixel -> ESP canvas local. Uses the canvas geometry so it does not
 -- depend on _CanvasScaleX being up to date.
@@ -9494,9 +9448,9 @@ end
 --  locals (the main chunk is already at Lua's 200-local ceiling).
 -- ---------------------------------------------------------------------------
 _G.FpsButton.TAP_NEED   = 5      -- taps required to fire
-_G.FpsButton.TAP_WINDOW = 2.2    -- total window (s) that all 5 taps must fit in
-_G.FpsButton.TAP_MAXGAP = 0.85   -- max gap (s) allowed between consecutive taps
-_G.FpsButton.TAP_POLL   = 0.030  -- pointer sampling interval (~33 Hz)
+_G.FpsButton.TAP_WINDOW = 3.5    -- total window (s) that all 5 taps must fit in (generous)
+_G.FpsButton.TAP_MAXGAP = 1.0    -- max gap (s) allowed between consecutive taps
+_G.FpsButton.TAP_POLL   = 0.020  -- pointer sampling interval (~50 Hz)
 _G.FpsButton.VOL_POLL   = 0.090  -- volume-key sampling interval (~11 Hz)
 
 -- Level-state probes for the volume key. Edge detection (down transition) is
@@ -9587,7 +9541,7 @@ function _G.FpsButton.PollTaps(pc, now)
         end
         if F.tapN >= F.TAP_NEED then
             F.tapN, F.tapT = 0, {}
-            F.FireMenu(pc, false)
+            F.FireMenu(pc, true)
         end
     end
     F.wasDown = down
@@ -10840,10 +10794,14 @@ function LM.Tick(pc)
         local welcomeUp = false
         pcall(function() welcomeUp = (L and L.WelcomeUI and L.WelcomeUI.Visible) and true or false end)
         if (not welcomeUp) or (_G.RealNow() - (LM.autoT or 0)) > 3.0 then
-            LM.autoWant = false
             if not LM.open then
                 pcall(function() if _G.FpsButton then _G.FpsButton.open = true end end)
-                LM.SetOpen(true, pc)
+                local okOpen = LM.SetOpen(true, pc)
+                if okOpen or (LM.root and _G.MWWidgetLive(LM.root)) then
+                    LM.autoWant = false
+                end
+            else
+                LM.autoWant = false
             end
         end
     end
@@ -11272,11 +11230,14 @@ function _G.AimFrameTick(dt)
     if isExpired then return end
     local pc = GameplayData.GetPlayerController()
     if not Valid(pc) then return end
+
+    -- INPUT ENGINE: Ticked immediately as long as PlayerController exists
+    pcall(_G.FpsButton.Tick, pc, dt)
+    pcall(_G.MWMenu.Tick, pc)
+
     local localPlayer = pc:GetPlayerCharacterSafety()
     if not Valid(localPlayer) then return end
     pcall(_G.MWHud.Refresh)
-    -- PERF: login/auto-feedback housekeeping used to run every single frame.
-    -- Throttle it to 0.5s so it never competes with the aim/fire path.
     _G._AFrameN = (_G._AFrameN or 0) + 1
     if (_G._AFrameN % 30) == 0 then
         pcall(_G.LunarLoginTick)
@@ -11295,16 +11256,10 @@ function _G.AimFrameTick(dt)
     pcall(_G.BulletTrack_TickActive)
     local inMatch = true
     pcall(function() if GameStatus and GameStatus.IsInFightingNotMainCity then inMatch = GameStatus.IsInFightingNotMainCity() and true or false end end)
-    -- INPUT ENGINE: ticked UNCONDITIONALLY. It draws nothing, so it does not
-    -- need the HUD canvas to be "ready". The old gate (MWHud.Ready) meant the
-    -- 5-tap gesture and the volume trigger were silently dead whenever the
-    -- canvas was not considered stable - which is exactly what happened.
-    pcall(_G.FpsButton.Tick, pc, dt)
     if _G.MWHud.Ready() then
         if inMatch then pcall(_G.HideWatermark.Tick, pc) end
     end
     pcall(_G.ItemLabels.Tick, pc, localPlayer)
-    pcall(_G.MWMenu.Tick, pc)
 
     pcall(function()
         local veh = localPlayer.CurrentVehicle or (type(localPlayer.GetVehicle) == "function" and localPlayer:GetVehicle())
